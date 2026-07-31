@@ -41,8 +41,13 @@
   #progressBar{height:8px;background:#e2e7ee;border-radius:4px;overflow:hidden}
   #progressBar>div{height:100%;width:0;background:var(--accent);transition:width .2s}
   #progressText{font-size:13px;color:var(--sub);margin-top:4px}
-  #canvasWrap{overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:14px;max-height:75vh;display:none}
-  #imgCanvas{display:block;cursor:pointer;max-width:100%;height:auto;touch-action:none}
+  #canvasWrap{overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:14px;max-height:75vh;display:none;background:#f4f6f9}
+  #imgCanvas{display:block;cursor:pointer;max-width:none;touch-action:none;margin:0 auto}
+  #zoomBar{display:none;align-items:center;flex-wrap:wrap;gap:6px;margin-top:12px}
+  #zoomBar .btn{padding:5px 10px;font-size:13px}
+  #zoomVal{display:inline-block;min-width:52px;text-align:center;font-size:13px;color:var(--sub)}
+  #zoomBar .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+  #zoomBar .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .toolrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
   .chk{display:flex;align-items:center;gap:5px;font-size:14px;color:var(--sub)}
   textarea{width:100%;min-height:260px;font-family:Consolas,"Courier New",monospace;font-size:15px;padding:12px;border:1px solid var(--line);border-radius:10px;resize:vertical;line-height:1.5}
@@ -103,6 +108,16 @@
   </div>
 
   <div id="detInfo"></div>
+  <div id="zoomBar">
+    <label style="font-size:13px;color:var(--sub)">顯示縮放</label>
+    <button class="btn" id="zoomOut" title="縮小（Ctrl + 滾輪也可以）">−</button>
+    <span id="zoomVal">100%</span>
+    <button class="btn" id="zoomIn" title="放大（Ctrl + 滾輪也可以）">＋</button>
+    <span class="sep"></span>
+    <button class="btn" id="zoomFitW" title="寬度貼齊視窗">符合寬度</button>
+    <button class="btn" id="zoomFitP" title="整頁塞進視窗">符合整頁</button>
+    <button class="btn" id="zoom100" title="原始像素大小">100%</button>
+  </div>
   <div id="canvasWrap"><canvas id="imgCanvas"></canvas></div>
   <div class="toolrow" id="imgTools" style="display:none">
     <span id="pageNav" style="display:none">
@@ -110,7 +125,7 @@
       <b id="pgInfo" style="margin:0 8px"></b>
       <button class="btn" id="pgNext">下一頁 ▶</button>
     </span>
-    <label class="chk"><input type="checkbox" id="showBoxes" checked> 顯示辨識框（點藍框＝排除誤判；點<b>綠框</b>＝刪除；<b>拖曳綠框＝移動、拖右下角手把＝縮放</b>；點空白處＝手動補和弦）</label>
+    <label class="chk"><input type="checkbox" id="showBoxes" checked> 顯示辨識框（點藍框＝排除誤判；點<b>綠框</b>＝刪除；<b>拖曳綠框＝移動、拖右下角手把＝調覆蓋範圍</b>；點空白處＝手動補和弦。字級由上方「標註字級」滑桿全頁統一調整；顯示大小用上方「顯示縮放」或 Ctrl＋滾輪）</label>
   </div>
 </div>
 
@@ -199,10 +214,16 @@ function correctCore(t0,allowLeadStrip=true){
   // D 被讀成 o/O/0：om7→Dm7
   m=t0.match(/^[oO0](m(?:aj)?\d{0,2})$/);
   if(r=m&&fix('D'+m[1],0))return r;
+  // 上標小字 7 前被多讀出斜線：Gm/7→Gm7、Dm/7→Dm7（C/7 本來就不是合法和弦，無衝突）
+  m=t0.match(/^([A-G][#b]?(?:m|maj|sus|add|dim|aug)?)\/(\d{1,2})$/);
+  if(m&&(r=fix(m[1]+m[2],0)))return r;
+  // ♭ 被讀成 o（限後面接 m 的形）：Bom/F→Bbm/F
+  m=t0.match(/^([A-G])o(m(?:aj)?\d{0,2}(?:\/[A-Ga-g][#b]?)?)$/);
+  if(m&&(r=fix(m[1]+'b'+m[2],0)))return r;
   // maj7 被讀成 maf：Fmaf→Fmaj7
   m=t0.match(/^([A-G][#b]?)maf$/);
   if(r=m&&fix(m[1]+'maj7',0))return r;
-  m=allowLeadStrip?t0.match(/^([|(\[Il1!jE]{1,2})(.+)$/):null;
+  m=allowLeadStrip?t0.match(/^([|(\[Il1!jE_]{1,2})(.+)$/):null;
   if(m){
     const lead=m[1].length,inner=m[2];
     if(r=fix(inner,lead))return r;
@@ -220,7 +241,7 @@ function correctCore(t0,allowLeadStrip=true){
 // 回傳 {str, lead, split}（lead=去掉的前導字元數；split=可能是兩個和弦的拆法）或 null
 function correctToken(raw,allowLeadStrip=true){
   const s=norm(raw).trim();
-  const t0=s.replace(/[),\].,:;!]+$/,'');
+  const t0=s.replace(/[),\].,:;!_]+$/,'');
   // 結尾的 : 可能是升記號 #（ETIG: → E7/G#）：只在得到「斜線+#」解讀時優先採用
   if(/^[A-G].*:$/.test(s)){
     const r2=correctCore(s.slice(0,-1)+'#',allowLeadStrip);
@@ -546,10 +567,12 @@ async function runOCR(){
     document.getElementById('imgControls').style.display='flex';
     document.getElementById('imgTools').style.display='flex';
     canvasWrap.style.display='block';
+    document.getElementById('zoomBar').style.display='flex';
     document.getElementById('pageNav').style.display=pages.length>1?'inline':'none';
     const info=document.getElementById('detInfo');
     info.style.display='block';
     renderImage();
+    setZoomMode('fitW');   // 載入完成預設「符合寬度」，不受原圖解析度影響
     if(!allDets().length) info.innerHTML='⚠️ 沒有辨識到和弦。試試更清晰、字體較大的圖片，或改用「文字譜」分頁。也可以點圖上位置手動加和弦。';
   }catch(err){
     txt.textContent='辨識失敗：'+err.message+'（請確認網路連線後重試）';
@@ -566,23 +589,27 @@ async function ocrOne(worker,img){
     probe.width=img.width;probe.height=img.height;
     const prctx=probe.getContext('2d');
     prctx.drawImage(img,0,0);
-    const rowDensity=cv=>{
+    // 每列統計：dens=墨水密度、run=最長「連續」墨水段占寬度比
+    // （五線譜的譜線是整行連續的長線；簡譜的節拍底線是斷成一段一段的短線，
+    //  只看密度會把簡譜誤判成五線譜 → 遮罩把和弦行塗掉）
+    const rowStats=cv=>{
       const c=cv.getContext('2d');
       const d=c.getImageData(0,0,cv.width,cv.height).data;
-      const out=new Float32Array(cv.height);
+      const dens=new Float32Array(cv.height),run=new Float32Array(cv.height);
       for(let y=0;y<cv.height;y++){
-        let dark=0;const off=y*cv.width*4;
+        let dark=0,cur=0,best=0;const off=y*cv.width*4;
         for(let x=0;x<cv.width;x+=2){
           const i=off+x*4;
-          if((d[i]+d[i+1]+d[i+2])/3<128)dark++;
+          if((d[i]+d[i+1]+d[i+2])/3<128){dark++;cur++;if(cur>best)best=cur;}
+          else cur=0;
         }
-        out[y]=dark/(cv.width/2);
+        dens[y]=dark/(cv.width/2);run[y]=best/(cv.width/2);
       }
-      return out;
+      return {dens,run};
     };
-    const dens0=rowDensity(probe);
+    const {dens:dens0,run:run0}=rowStats(probe);
     let staffRows=0;
-    for(let y=0;y<dens0.length;y++) if(dens0[y]>0.25) staffRows++;
+    for(let y=0;y<dens0.length;y++) if(dens0[y]>0.25&&run0[y]>0.5) staffRows++;
     const isStaff=staffRows>=10;
 
     // 五線譜：放大 5 倍並遮除譜線區；文字譜：放大 3 倍
@@ -600,7 +627,7 @@ async function ocrOne(worker,img){
       pctx.drawImage(img,0,0,pre.width,pre.height);
       if(isStaff){
         // 遮除墨量高的列，並把譜線間小縫隙一併補滿（蓋住音符）
-        const dens=rowDensity(pre);
+        const dens=rowStats(pre).dens;
         const masked=new Uint8Array(pre.height);
         for(let y=0;y<pre.height;y++) masked[y]=dens[y]>0.12?1:0;
         const gapMax=Math.round(6.4*scale);
@@ -728,6 +755,16 @@ function sampleBg(img,b){
   }catch(e){return '#fff';}
 }
 
+// 全頁統一字級的基準框高：取「OCR 藍框」框高的中位數（沒有則取全部框），
+// 這樣同一頁所有和弦（含已辨識到的）字體大小一致，滑桿只是整體倍率。
+function baseFontH(p){
+  let hs=(p.dets||[]).filter(d=>!d.manual).map(d=>d.bbox.y1-d.bbox.y0);
+  if(!hs.length) hs=(p.dets||[]).map(d=>d.bbox.y1-d.bbox.y0);
+  if(!hs.length) return Math.max(10,p.img.width/45);
+  hs.sort((a,b)=>a-b);
+  return hs[Math.floor(hs.length/2)];
+}
+
 // 把一頁畫到指定 canvas（下載時 withBoxes=false）
 function paintPage(p,cnv,withBoxes){
   const img=p.img,c=cnv.getContext('2d');
@@ -738,20 +775,26 @@ function paintPage(p,cnv,withBoxes){
   const mode=document.getElementById('imgMode').value;
   const color=document.getElementById('imgColor').value;
   const fscale=Math.max(0.1,(parseInt(document.getElementById('imgFont').value,10)||100)/100);
+  // 全頁統一字級：所有標註（OCR 藍框＋手動綠框）都用同一個 fs，滑桿一動全部一起變
+  const fs=Math.max(8,Math.round(baseFontH(p)*fscale));
+  c.textBaseline='alphabetic';
+  c.font='bold '+fs+'px Arial';
 
   for(const d of p.dets){
     const b=d.bbox,h=b.y1-b.y0;
     if(d.on&&semi!==0){
       const newChord=chordToString(d.chord,semi,style);
-      c.textBaseline='alphabetic';
-      let fs=Math.max(8,Math.round(h*fscale));
       c.font='bold '+fs+'px Arial';
-      while(fs>8&&c.measureText(newChord).width>(b.x1-b.x0)*1.9*fscale){fs--;c.font='bold '+fs+'px Arial';}
+      const tw=c.measureText(newChord).width;
       if(mode==='cover'){
+        // 覆蓋範圍＝原框 ∪ 新字實際占用範圍（字級調大時覆蓋一起變大，才蓋得住原和弦）
+        const base=b.y1-Math.round(h*0.1);
+        const rx0=b.x0-3, ry1=Math.max(b.y1+3,base+Math.round(fs*0.22));
+        const rx1=Math.max(b.x1+3,b.x0+tw+3), ry0=Math.min(b.y0-3,base-fs);
         c.fillStyle=sampleBg(img,b);
-        c.fillRect(b.x0-3,b.y0-3,(b.x1-b.x0)+6,h+6);
+        c.fillRect(rx0,ry0,rx1-rx0,ry1-ry0);
         c.fillStyle=color;
-        c.fillText(newChord,b.x0,b.y1-Math.round(h*0.1));
+        c.fillText(newChord,b.x0,base);
       }else{
         c.fillStyle=color;
         c.fillText(newChord,b.x0,b.y0-Math.round(h*0.15));
@@ -770,9 +813,61 @@ function paintPage(p,cnv,withBoxes){
   }
 }
 
+// ---------- 顯示縮放（只影響畫面大小，不動原圖與座標資料） ----------
+const ZMIN=0.05,ZMAX=8;
+let viewZoom=1, zoomMode='fitW';   // fitW=符合寬度 / fitP=符合整頁 / free=手動
+function wrapBox(){
+  const cs=getComputedStyle(canvasWrap);
+  const w=canvasWrap.clientWidth-parseFloat(cs.paddingLeft||0)-parseFloat(cs.paddingRight||0)-2;
+  // max-height 是 75vh，但也可能被實際高度限制；用 min 取得可視高度
+  const h=Math.min(parseFloat(cs.maxHeight)||window.innerHeight*0.75,window.innerHeight*0.75)-2;
+  return {w:Math.max(50,w),h:Math.max(50,h)};
+}
+function fitZoom(mode){
+  if(!canvas.width||!canvas.height)return 1;
+  const b=wrapBox();
+  const zw=b.w/canvas.width;
+  return mode==='fitP'?Math.min(zw,b.h/canvas.height):zw;
+}
+function applyZoom(){
+  if(!canvas.width)return;
+  if(zoomMode!=='free')viewZoom=fitZoom(zoomMode);
+  viewZoom=Math.min(ZMAX,Math.max(ZMIN,viewZoom));
+  canvas.style.width=Math.round(canvas.width*viewZoom)+'px';
+  canvas.style.height=Math.round(canvas.height*viewZoom)+'px';
+  document.getElementById('zoomVal').textContent=Math.round(viewZoom*100)+'%';
+  for(const [id,m] of [['zoomFitW','fitW'],['zoomFitP','fitP']])
+    document.getElementById(id).classList.toggle('on',zoomMode===m);
+}
+function setZoomMode(m){zoomMode=m;applyZoom();}
+function setZoom(z,anchor){
+  const before=anchor?{x:anchor.x,y:anchor.y}:null;
+  const old=viewZoom;
+  zoomMode='free';viewZoom=Math.min(ZMAX,Math.max(ZMIN,z));applyZoom();
+  if(before){ // 以游標位置為錨點，縮放後維持同一點在畫面上不動
+    const k=viewZoom/old;
+    canvasWrap.scrollLeft=(canvasWrap.scrollLeft+before.x)*k-before.x;
+    canvasWrap.scrollTop=(canvasWrap.scrollTop+before.y)*k-before.y;
+  }
+}
+const zoomStep=d=>setZoom(viewZoom*(d>0?1.25:0.8));
+document.getElementById('zoomIn').onclick=()=>zoomStep(1);
+document.getElementById('zoomOut').onclick=()=>zoomStep(-1);
+document.getElementById('zoomFitW').onclick=()=>setZoomMode('fitW');
+document.getElementById('zoomFitP').onclick=()=>setZoomMode('fitP');
+document.getElementById('zoom100').onclick=()=>setZoom(1);
+canvasWrap.addEventListener('wheel',e=>{
+  if(!e.ctrlKey&&!e.metaKey)return;
+  e.preventDefault();
+  const r=canvasWrap.getBoundingClientRect();
+  setZoom(viewZoom*(e.deltaY<0?1.12:1/1.12),{x:e.clientX-r.left,y:e.clientY-r.top});
+},{passive:false});
+addEventListener('resize',()=>{if(zoomMode!=='free')applyZoom();});
+
 function renderImage(){
   const p=curPage();if(!p)return;
   paintPage(p,canvas,document.getElementById('showBoxes').checked);
+  applyZoom();   // canvas.width 可能因換頁改變，重新套用顯示尺寸
   document.getElementById('pgInfo').textContent=(cur+1)+' / '+pages.length;
   updateInfo();
 }
@@ -788,11 +883,12 @@ function canvasPos(e){
 }
 // 由後往前找（後加的綠框優先）；綠框先判右下角手把，再判框身
 function hitTest(p,x,y){
-  const hr=Math.max(handleR(p.img)*1.6,8);
+  // 容差換算成「螢幕上約 10px / 5px」，縮小顯示時才不會難點到
+  const hr=Math.max(handleR(p.img)*1.6,8,10/viewZoom), tol=Math.max(4,5/viewZoom);
   for(let i=p.dets.length-1;i>=0;i--){
     const d=p.dets[i],b=d.bbox;
     if(d.manual&&Math.abs(x-(b.x1+3))<=hr&&Math.abs(y-(b.y1+3))<=hr)return{i,d,mode:'resize'};
-    if(x>=b.x0-4&&x<=b.x1+4&&y>=b.y0-4&&y<=b.y1+4)return{i,d,mode:d.manual?'move':'toggle'};
+    if(x>=b.x0-tol&&x<=b.x1+tol&&y>=b.y0-tol&&y<=b.y1+tol)return{i,d,mode:d.manual?'move':'toggle'};
   }
   return null;
 }
@@ -815,12 +911,13 @@ canvas.onpointermove=e=>{
   const {hit,orig}=dragSt;
   if(!hit||!hit.d.manual)return; // 只有綠框能拖
   const dx=x-dragSt.x0,dy=y-dragSt.y0;
-  if(!dragSt.moved&&Math.abs(dx)<=3&&Math.abs(dy)<=3)return; // 3px 內仍視為點擊
+  const th=3/viewZoom; // 螢幕上位移 3px 內仍視為點擊（隨顯示縮放換算）
+  if(!dragSt.moved&&Math.abs(dx)<=th&&Math.abs(dy)<=th)return;
   dragSt.moved=true;
   const b=hit.d.bbox;
   if(hit.mode==='move'){
     b.x0=orig.x0+dx;b.x1=orig.x1+dx;b.y0=orig.y0+dy;b.y1=orig.y1+dy;
-  }else{ // resize：以左上角為錨點等比例縮放（字級隨框高、覆蓋範圍隨框大小）
+  }else{ // resize：以左上角為錨點等比例縮放（字級由「標註字級」滑桿全頁統一，此處只調覆蓋範圍）
     const w0=Math.max(1,orig.x1-orig.x0),h0=Math.max(1,orig.y1-orig.y0);
     const s=Math.max(0.25,Math.max((w0+dx)/w0,(h0+dy)/h0));
     b.x1=orig.x0+w0*s;b.y1=orig.y0+h0*s;
@@ -838,7 +935,7 @@ canvas.onpointerup=e=>{
   }
   // 點空白處：手動補上漏辨識的和弦
   const {x,y}=canvasPos(e);
-  const input=prompt('OCR 沒抓到這裡的和弦？輸入要加在此處的「原調」和弦（例如 Bb、G7、C/E），取消則不加。\n（可拖曳綠框移動位置、拖右下角手把調大小；點一下綠框＝刪除）');
+  const input=prompt('OCR 沒抓到這裡的和弦？輸入要加在此處的「原調」和弦（例如 Bb、G7、C/E），取消則不加。\n（可拖曳綠框移動位置、拖右下角手把調覆蓋範圍；字級用上方「標註字級」滑桿全頁統一調整；點一下綠框＝刪除）');
   if(!input)return;
   const c=parseChord(norm(input.trim()));
   if(!c){alert('「'+input+'」看起來不是和弦，請用像 C、Am7、Bb、F/G 的寫法。');return;}
