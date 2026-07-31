@@ -257,6 +257,19 @@ function correctToken(raw,allowLeadStrip=true){
   return null;
 }
 
+// ♯ 記號被 OCR 讀成別的字母（實測：F♯m→Fem、D/F♯→D/Fi、A/C♯→AICE / AICK / Alct）。
+// 只把「音名後面緊接的 1~2 個像♯的雜訊字元」換成 #，再回 correctCore 驗證，能解析才算數。
+// ⚠️ 這個修正很積極（Get→G#、Fit→F#、Gem→G#m），所以**不進一般解析路徑**，
+//    只在 detectFrom 已確認是和弦行、或稀疏掃描的和弦高度帶內當救援用。
+const SHARP_LOOKALIKE=/([A-Ga-g])[eEiIltTkKhHfF4+xX]{1,2}(?=$|\/|[mM]|\d|sus|add|dim|aug|maj)/g;
+function sharpenToken(raw,allowLeadStrip=true){
+  const s=norm(raw).trim().replace(/[),\].,:;!_]+$/,'');
+  if(!/[A-G]/.test(s))return null;
+  const t=s.replace(SHARP_LOOKALIKE,'$1#');
+  if(t===s)return null;
+  return correctCore(t,allowLeadStrip);
+}
+
 // 兩輪辨識結果的聯集合併（重疊的框保留資訊較完整者）
 function bboxOverlap(a,b){
   const x0=Math.max(a.bbox.x0,b.bbox.x0),x1=Math.min(a.bbox.x1,b.bbox.x1);
@@ -284,6 +297,7 @@ function mergeDets(A,B){
 // 稀疏模式救援用的積極修正（只在已知和弦列高度帶內使用）：ENG:→E7/G#、Co→C
 function sparseCorrect(raw){
   let r=correctToken(raw,false); if(r)return r;
+  r=sharpenToken(raw,false); if(r)return r;   // 稀疏掃描已限定在和弦列高度帶內，可安全用 ♯ 修正
   const s=norm(raw).trim();
   if(!/^[A-G]/.test(s))return null;
   const t0=s.replace(/[),\].,;!]+$/,'');
@@ -609,7 +623,11 @@ async function ocrOne(worker,img){
     };
     const {dens:dens0,run:run0}=rowStats(probe);
     let staffRows=0;
-    for(let y=0;y<dens0.length;y++) if(dens0[y]>0.25&&run0[y]>0.5) staffRows++;
+    // run>0.5 是「乾淨掃描」的判準；掃描件的譜線常被雜訊/壓縮咬斷，最長段達不到全寬一半，
+    // 因此改用 run/dens（該列墨水有多集中在同一段）當第二判準：
+    // 真譜線即使斷成幾截，主段仍占該列墨量九成以上；簡譜的節拍底線是很多短段，比值只有 0.1~0.3。
+    for(let y=0;y<dens0.length;y++)
+      if(dens0[y]>0.25&&(run0[y]>0.5||(run0[y]>0.3&&run0[y]>=dens0[y]*0.75))) staffRows++;
     const isStaff=staffRows>=10;
 
     // 五線譜：放大 5 倍並遮除譜線區；文字譜：放大 3 倍
@@ -670,7 +688,7 @@ async function ocrOne(worker,img){
     const detectFrom=data=>{
       const accepted=[],borderline=[];
       for(const line of (data.lines||[])){
-        const cands=[],susp=[],fails=[];
+        const cands=[],susp=[],fails=[],sharp=[];
         let firstX=1e9;
         for(const w of (line.words||[])) if(/\S/.test(w.text)) firstX=Math.min(firstX,w.bbox.x0);
         for(const w of (line.words||[])){
@@ -680,7 +698,11 @@ async function ocrOne(worker,img){
           else{
             const t=norm(w.text).trim().replace(/[),\].,:;!]+$/,'');
             if(t==='8'&&w.bbox.x0>firstX+5) fails.push({r:{str:'Bb',lead:0,split:null},w});
-            else if(/[A-Za-z]/.test(w.text)&&!isNeutralWord(w.text)) susp.push(w.text);
+            else{
+              const rs=sharpenToken(w.text,!isStaff);   // ♯ 誤讀候選，稍後只在和弦行才啟用
+              if(rs) sharp.push({r:rs,w});
+              if(/[A-Za-z]/.test(w.text)&&!isNeutralWord(w.text)) susp.push(w.text);
+            }
           }
         }
         let lineAcc;
@@ -688,13 +710,18 @@ async function ocrOne(worker,img){
         else if((cands.length>=2&&cands.length>=susp.length)||susp.length===0) lineAcc=[...cands];
         else if(cands.length>=2){ lineAcc=[]; for(const x of cands){x.suspN=susp.length;borderline.push(x);} }
         else { lineAcc=[]; for(const x of cands){ if(x.conf>=55&&susp.length<=3) lineAcc.push(x); else {x.suspN=susp.length;borderline.push(x);} } }
-        if(lineAcc.length>=3&&fails.length){
+        // 救援：本行已確認是和弦行時，才把先前被拒的字用字高比對撿回來
+        // （fails 需 ≥3 個和弦；♯ 誤讀因為修正很積極但形態明確，門檻放寬到 ≥2）
+        const rescue=(list,minAcc)=>{
+          if(lineAcc.length<minAcc||!list.length)return;
           const lh=lineAcc.map(d=>d.h).sort((a,b)=>a-b)[Math.floor(lineAcc.length/2)];
-          for(const f of fails){
+          for(const f of list){
             const h=(f.w.bbox.y1-f.w.bbox.y0)/scale;
             if(h<=lh*1.6) lineAcc.push(...makeDets(f.r,f.w));
           }
-        }
+        };
+        rescue(fails,3);
+        rescue(sharp,2);
         // 整行都是光桿單字母且很多個 → 多半是歌詞被誤讀成字母，整行拒絕
         if(lineAcc.length>=6&&lineAcc.every(d=>d.text.length===1)) lineAcc=[];
         accepted.push(...lineAcc);

@@ -1,5 +1,17 @@
 # 專案知識庫
 
+## 2026-07-31 — 掃描件被誤判成文字譜 ＋ ♯ 被 OCR 讀成字母（A/C♯、F♯m 抓不到）
+測試檔：讚美之泉《我全然獻上》五線譜掃描 1732×2420 JPG。**兩個獨立根因，第一個影響大得多。**
+- **根因 1：`isStaff` 誤判**。原判準「dens>0.25 && run>0.5 的列數 ≥10」對這張只算出 **6 列** → 走文字譜路徑、譜線完全沒遮罩 → 整頁只抓到 2 個假和弦（`E`×2）。原因是掃描/JPEG 雜訊把譜線咬斷，最長連續段只到全寬 0.59（譜線本身也才佔全寬 ~0.70），過不了 0.5 的**絕對**門檻。
+  - 修法：加第二判準 `run>0.3 && run>=dens*0.75`，即「這列的墨水有多集中在同一段」。真譜線的主段占該列墨量 ~0.95；簡譜節拍底線/歌詞列是很多短段，比值只有 0.04–0.3（合成資料實測），所以不會回歸 2026-07-31 早先修好的「簡譜被誤判成五線譜」。本檔 staffRows 6 → **23**。
+  - 教訓：**掃描件不要用「佔全寬比例」這種絕對門檻**，要用形狀/比例特徵（連續性 = run/dens）。
+- **根因 2：♯ 記號的 OCR 讀法**。tesseract 對本檔 ♯ 的實際輸出：`F♯m→Fem`、`D/F♯→D/Fi`、`A/C♯→A/C#`（少數正確）/`AICE`/`AICK`/`Alct`。
+  - 修法 `sharpenToken()`：把「音名 `[A-Ga-g]` 後面緊接 1–2 個像♯的字元 `[eEiIltTkKhHfF4+xX]`，且後面是字尾/`/`/m/數字/sus/add/dim/aug/maj」換成 `#`，再回 `correctCore` 驗證。`AICE→AIC#`→（既有的 I→/ 規則）→`A/C#`。
+  - **這個修正很積極**（`Get→G#`、`Fit→F#`、`Gem→G#m`、`Bee→B#`），所以**刻意不放進 `correctToken` 一般路徑**，只在兩處救援：`detectFrom` 內該行已有 ≥2 個確認和弦時（沿用字高比對 `h<=lh*1.6`），以及 `sparseCorrect`（本來就限定和弦列高度帶）。歌詞行湊不到 2 個和弦，救援不會啟動。
+  - 既有的 `fails` 救援門檻維持 ≥3；♯ 救援用 ≥2（實測第 8 小節那行 OCR 只認得出 D、Bm 兩個）。
+- **成效（同一張圖）**：舊版真實路徑 2 個假和弦 → 新版 36 個偵測，含 `A/C#`×3、`F#m`、`D/F#`、`D/A`、`G/A`、`E7` 等。
+- **驗證管線（可重複）**：Python(PIL/numpy) 重現 `rowStats`＋遮罩前處理 → `tesseract --psm 3 tsv` → node 用 `new Function` 把 HTML 裡的 `correctCore/correctToken/sharpenToken/detectFrom` 原始碼**直接抽出來跑**（detectFrom 依賴 `scale`/`isStaff`，用工廠函式注入）→ 34 項斷言（♯ 案例、歌詞行必須 0 和弦、18 項既有誤讀修正不得退化）。舊版跑同一份測試只失敗新增的 3 個 ♯ 案例，證明無回歸。
+
 ## 2026-07-31 — 顯示縮放（不受原圖解析度影響）
 - 問題：`#imgCanvas` 原本靠 `max-width:100%;height:auto` 決定畫面大小 → 大圖被壓到容器寬、小圖維持原尺寸，完全被來源解析度綁死。
 - 作法：CSS 改 `max-width:none` + `margin:0 auto`，畫面大小改由 JS 明確設 `canvas.style.width/height = canvas.width/height × viewZoom`（**只改 CSS 顯示尺寸，canvas 位圖與 bbox 座標一律維持原圖像素**，所以 OCR/轉調/下載 PNG、PDF 完全不受影響）。
