@@ -1,5 +1,15 @@
 # 專案知識庫
 
+## 2026-07-31 — 環境踩坑：`.git/*.lock`、`tmp_obj_*` 一直殘留刪不掉
+- 現象：每次 git 操作都噴 `warning: unable to unlink '.git/objects/xx/tmp_obj_xxxx'`、`unable to unlink '.git/HEAD.lock'`，下一次 git 就被 `fatal: Unable to create '.git/index.lock': File exists` 擋住。
+- 原因：專案資料夾是以 **FUSE 掛載**進 AI 沙箱的，預設政策是「可建立、可寫入、**可 rename**，但**不可 unlink（刪除）**」（實測：`touch` 成功、`mv` 成功、`rm` 一律 `Operation not permitted`）。git 的收尾動作大量依賴 unlink：寫完物件後刪 `tmp_obj_*`、ref 交易結束後刪 `HEAD.lock`/`index.lock`。unlink 被拒 → 鎖檔殘留 → 下次 git 誤以為有其他 git 程序在跑。
+- **不是** git 壞掉，也不是磁碟權限問題；commit 本身其實都成功了（rename 那步是通的），只有清理失敗。
+- 解法（擇一）：
+  1. **開啟該資料夾的刪除權限**（AI 呼叫 `allow_cowork_file_delete` 請求、使用者按同意）。開啟後實測 commit 完全乾淨、零殘留 —— **這是根治法**。
+  2. 從 Windows 端自己跑 git（Git Bash / VS Code / GitHub Desktop），不受沙箱掛載限制。
+  3. 沒有刪除權限時的臨時繞道：`GIT_INDEX_FILE=/tmp/idx git read-tree HEAD && git add -A && git write-tree` → `git commit-tree` → 直接把 commit hash **寫入** `.git/refs/heads/master`（純寫檔，不需 unlink），最後 `cp /tmp/idx .git/index`。
+- 清理殘留：`find .git -name "tmp_obj*" -delete`、`find .git -name "*.lock" -delete`（含 `.git/objects/maintenance.lock`）。
+
 ## 2026-07-31 — 掃描件被誤判成文字譜 ＋ ♯ 被 OCR 讀成字母（A/C♯、F♯m 抓不到）
 測試檔：讚美之泉《我全然獻上》五線譜掃描 1732×2420 JPG。**兩個獨立根因，第一個影響大得多。**
 - **根因 1：`isStaff` 誤判**。原判準「dens>0.25 && run>0.5 的列數 ≥10」對這張只算出 **6 列** → 走文字譜路徑、譜線完全沒遮罩 → 整頁只抓到 2 個假和弦（`E`×2）。原因是掃描/JPEG 雜訊把譜線咬斷，最長連續段只到全寬 0.59（譜線本身也才佔全寬 ~0.70），過不了 0.5 的**絕對**門檻。
