@@ -1,5 +1,7 @@
 # 和弦轉調工具
 
+**線上使用：https://wsk719.github.io/chord-transpose-tool/**
+
 上傳圖片／PDF 和弦譜 → OCR 辨識和弦 → 轉調並直接標註回譜面；也支援純文字譜轉調。
 **全部在瀏覽器端執行，沒有後端，譜面檔案不會離開使用者的電腦。**
 
@@ -17,6 +19,9 @@
 改功能請改 `和弦轉調工具.html`，然後跑一次 `python build_site.py`。
 
 ## 部署到 GitHub Pages
+
+本專案已部署於 [wsk719/chord-transpose-tool](https://github.com/wsk719/chord-transpose-tool)（`main` 分支 `/docs`）。
+要重新部署到別的 repo，步驟如下：
 
 1. 把這個資料夾推到 GitHub 的**公開** repo（免費方案的 Pages 只支援公開 repo）。
 2. repo → **Settings → Pages** → Source 選 **Deploy from a branch**，
