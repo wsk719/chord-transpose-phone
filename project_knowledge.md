@@ -1,4 +1,16 @@
+
 # 專案知識庫
+
+## 2026-07-31 — 上線 GitHub Pages：自帶第三方函式庫
+- 架構：**單一原始碼** `和弦轉調工具.html`（本機用，走 CDN）→ `build_site.py` → `docs/index.html`（部署用，走 `docs/vendor/`）。build script 對每個替換都要求「正好命中 1 次」，沒命中就 `sys.exit`，避免升級版本後靜靜產出壞頁面；最後還會掃描產出檔，確認沒有殘留任何 `http(s)://` 外部資源。
+- **最大的坑：worker 的相對路徑**。tesseract.js 預設用 **blob URL** 建立 Web Worker，worker 裡的 `importScripts('vendor/…')` 會相對於**網站根目錄**解析，在 GitHub Pages 專案頁 `https://user.github.io/repo/` 底下必 404。解法：頁面一開始算好同源絕對路徑 `const VENDOR=new URL('vendor/',location.href).href`，再把 `workerPath/corePath/langPath` 與 `pdfjsLib.GlobalWorkerOptions.workerSrc` 都指到它。已用 jsdom 驗證專案頁（子路徑）與使用者頁（根路徑）都正確。
+- **要自帶哪些檔案是有講究的**（讀 `worker.min.js` 原始碼確認，不能亂猜）：
+  - 語言包預設為 `https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng` + （`lstmOnly ? '/4.0.0_best_int' : '/4.0.0'`）。本工具 `createWorker('eng',1,…)` 的 `1` 是 **OEM=LSTM_ONLY** → 實際抓的是 **`4.0.0_best_int`（2.9MB）**，不是 `4.0.0`（10.9MB）。自帶時要挑對，否則辨識結果會跟原本不一樣。
+  - core 選擇：`lstmOnly ? tesseract-core-simd-lstm.wasm.js : tesseract-core-simd.wasm.js`（無 SIMD 則去掉 `-simd`）。所以只需帶 `-lstm` 那兩組（含各自的 `.wasm`），不必帶全部 8 個檔（省 13MB）。
+  - `corePath`/`langPath` 給**目錄**即可，tesseract 會自己接檔名。
+- `.gz` 放靜態主機的疑慮（主機自動解壓 → 二次 gunzip 失敗）不存在：tesseract.js 會檢查 gzip magic（原始碼裡的 `31===` / `139===`）再決定要不要 inflate。
+- vendor 合計約 18MB（首次載入才下載，之後瀏覽器快取）。GitHub Pages 免費方案：站台 ≤1GB、頻寬**軟**上限 100GB/月、免費方案需 **public repo**、條款禁止當商業 SaaS。要更寬鬆可原封不動改丟 Cloudflare Pages（官方 limits 頁沒有頻寬上限，單檔上限 25MiB —— 我們最大的檔 3.8MB，安全）。
+- 沙箱不能用 curl/wget 抓檔，但**可以用 npm**：函式庫一律 `npm i` 後從 `node_modules/` 複製，順便也拿到正確版本與授權檔。
 
 ## 2026-07-31 — 環境踩坑：`.git/*.lock`、`tmp_obj_*` 一直殘留刪不掉
 - 現象：每次 git 操作都噴 `warning: unable to unlink '.git/objects/xx/tmp_obj_xxxx'`、`unable to unlink '.git/HEAD.lock'`，下一次 git 就被 `fatal: Unable to create '.git/index.lock': File exists` 擋住。
