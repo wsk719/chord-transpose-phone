@@ -74,8 +74,6 @@
   pre#textOut{font-family:Consolas,"Courier New",monospace;font-size:15px;background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:12px;min-height:260px;margin:0;overflow:auto;line-height:1.5}
   pre#textOut .ch{color:var(--red);font-weight:700}
   #detInfo{font-size:13px;color:var(--sub);margin-top:8px;display:none}
-  .badge{display:inline-block;background:#eef2f7;border:1px solid var(--line);border-radius:6px;padding:1px 8px;margin:2px;font-size:13px}
-  .badge.off{opacity:.35;text-decoration:line-through}
   .hide{display:none!important}
   #pageNav{display:none;align-items:center;gap:8px}
   details.help{font-size:13px;color:var(--sub);width:100%}
@@ -671,11 +669,12 @@ async function runOCR(){
       document.getElementById('floatBar').classList.add('on');
       document.getElementById('modeTip').classList.remove('hide');
     }
-    const info=document.getElementById('detInfo');
-    info.style.display='block';
     renderImage();
     setZoomMode('fitW');   // 載入完成預設「符合寬度」，不受原圖解析度影響
-    if(!allDets().length) info.innerHTML='⚠️ 沒有辨識到和弦。試試更清晰、字體較大的圖片，或改用「文字譜」分頁。也可以點圖上位置手動加和弦。';
+    // #detInfo 現在只在「完全沒抓到和弦」時出現（原本的和弦清單太佔空間，已移除）
+    const info=document.getElementById('detInfo'),none=!allDets().length;
+    info.innerHTML=none?'⚠️ 沒有辨識到和弦。試試更清晰、字體較大的圖片，或改用「文字譜」分頁。也可以點圖上位置手動加和弦。':'';
+    info.style.display=none?'block':'none';
   }catch(err){
     txt.textContent='辨識失敗：'+err.message+'（請確認網路連線後重試）';
   }
@@ -841,15 +840,6 @@ async function ocrOne(worker,img){
   }
 }
 
-function updateInfo(){
-  const p=curPage();if(!p)return;
-  const info=document.getElementById('detInfo');
-  const style=resolveStyle(imgState.style,imgState.toKey,allDets().map(d=>d.chord));
-  const pg=pages.length>1?'（第 '+(cur+1)+' 頁）':'';
-  info.innerHTML='辨識到 '+p.dets.length+' 個和弦'+pg+'： '+
-    p.dets.map(d=>`<span class="badge ${d.on?'':'off'}">${d.manual?'✋':''}${d.text}${imgState.semi?' → '+chordToString(d.chord,imgState.semi,style):''}</span>`).join('');
-}
-
 // 取 bbox 周圍的背景色（供覆蓋用）
 function sampleBg(img,b){
   const pad=4;
@@ -985,7 +975,6 @@ function renderImage(){
   paintPage(p,canvas,document.getElementById('showBoxes').checked);
   applyZoom();   // canvas.width 可能因換頁改變，重新套用顯示尺寸
   document.getElementById('pgInfo').textContent=(cur+1)+' / '+pages.length;
-  updateInfo();
 }
 document.getElementById('pgPrev').onclick=()=>{if(cur>0){cur--;renderImage();}};
 document.getElementById('pgNext').onclick=()=>{if(cur<pages.length-1){cur++;renderImage();}};
