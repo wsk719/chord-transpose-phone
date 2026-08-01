@@ -13,10 +13,29 @@
 | `build_site.py` | 產生部署版：`python build_site.py` |
 | `docs/index.html` | 部署版（由上面產生，**請勿手改**） |
 | `docs/vendor/` | 自帶的第三方函式庫（見下方清單） |
+| `tests/test_mobile.js` | 手機版面／觸控手勢的 jsdom 測試 |
 | `implementation_plan.md` | 當前需求與解法 |
 | `project_knowledge.md` | 專案知識庫／踩坑紀錄 |
 
 改功能請改 `和弦轉調工具.html`，然後跑一次 `python build_site.py`。
+
+```bash
+npm i jsdom                              # 只有跑測試才需要
+node tests/test_mobile.js                # 測原始碼
+node tests/test_mobile.js docs/index.html  # 測產出的部署版
+```
+
+## 手機上怎麼用
+
+譜面本身吃 `touch-action:none`（拖曳標註需要），所以平移與縮放都由頁面自己處理，
+手機／平板上譜面右下角會多一顆浮動按鈕：
+
+| | 模式 | 操作 |
+|---|---|---|
+| ✋ | 瀏覽（預設） | 單指拖曳移動譜面、雙指捏合縮放、雙擊切換原尺寸／符合寬度 |
+| ✏️ | 編輯標註 | 點藍框＝排除誤判、點綠框＝刪除、拖曳綠框＝移動、點空白＝手動補和弦；雙指仍可縮放 |
+
+用滑鼠時不受模式影響，行為與原本完全相同（點擊即編輯、Ctrl＋滾輪縮放）。
 
 ## 部署到 GitHub Pages
 

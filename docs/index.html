@@ -45,8 +45,20 @@
   #progressBar{height:8px;background:#e2e7ee;border-radius:4px;overflow:hidden}
   #progressBar>div{height:100%;width:0;background:var(--accent);transition:width .2s}
   #progressText{font-size:13px;color:var(--sub);margin-top:4px}
+  #canvasArea{position:relative}
   #canvasWrap{overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:14px;max-height:75vh;display:none;background:#f4f6f9}
   #imgCanvas{display:block;cursor:pointer;max-width:none;touch-action:none;margin:0 auto}
+  #canvasWrap.viewmode #imgCanvas{cursor:grab}
+  /* 觸控裝置：浮在譜面右下角的工具列（模式切換＋縮放），滑鼠裝置不顯示 */
+  #floatBar{display:none;position:absolute;right:12px;bottom:12px;z-index:6;gap:6px;
+    background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:999px;
+    padding:5px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
+  #floatBar.on{display:flex}
+  #floatBar .fb{width:44px;height:44px;padding:0;border-radius:999px;font-size:18px;line-height:1;
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+  #floatBar .fb.act{background:var(--accent);color:#fff;border-color:var(--accent)}
+  #modeTip{display:none;font-size:13px;color:var(--sub);margin-top:8px;line-height:1.6}
+  body.touch #modeTip{display:block}
   #zoomBar{display:none;align-items:center;flex-wrap:wrap;gap:6px;margin-top:12px}
   #zoomBar .btn{padding:5px 10px;font-size:13px}
   #zoomVal{display:inline-block;min-width:52px;text-align:center;font-size:13px;color:var(--sub)}
@@ -64,8 +76,52 @@
   #detInfo{font-size:13px;color:var(--sub);margin-top:8px;display:none}
   .badge{display:inline-block;background:#eef2f7;border:1px solid var(--line);border-radius:6px;padding:1px 8px;margin:2px;font-size:13px}
   .badge.off{opacity:.35;text-decoration:line-through}
+  .hide{display:none!important}
+  #pageNav{display:none;align-items:center;gap:8px}
+  details.help{font-size:13px;color:var(--sub);width:100%}
+  details.help>summary{cursor:pointer;color:var(--accent);padding:4px 0;list-style:none}
+  details.help>summary::-webkit-details-marker{display:none}
+  details.help>summary::before{content:"▸ ";display:inline-block;transition:.15s}
+  details.help[open]>summary::before{content:"▾ "}
+  details.help .body{line-height:1.8;padding:4px 0 2px}
+
+  /* ============ 手機／平板直式：版面重排 ============ */
+  @media(max-width:768px){
+    header{padding:10px 12px;gap:4px;flex-wrap:wrap}
+    header h1{font-size:17px}
+    header .sub{font-size:12px;flex-basis:100%}
+    .tabs{margin:10px 8px 0;gap:4px}
+    .tab{flex:1;text-align:center;padding:12px 6px;font-size:16px}
+    .panel{margin:0 8px 18px;padding:12px;border-radius:12px}
+    /* iOS 對 <16px 的表單控制項會在聚焦時自動放大整頁 */
+    select,textarea,input[type=text],input[type=number]{font-size:16px}
+    .btn,button{min-height:44px}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+    .ctl{min-width:0}
+    .ctl select{width:100%}
+    .ctl.wide,.controls>.btn{grid-column:1/-1}
+    .stepper button{width:52px;height:44px}
+    .stepper .semi{flex:1;font-size:17px}
+    #imgFont{width:100%!important}
+    #imgColor{width:100%;height:44px;padding:4px}
+    .drop{padding:22px 12px}
+    .drop .hint{font-size:12px}
+    #canvasWrap{max-height:60vh;max-height:60svh;margin-top:10px}
+    #zoomBar{gap:6px;margin-top:10px}
+    #zoomBar>label{width:100%}
+    #zoomBar .btn{padding:8px 12px;font-size:14px;min-height:40px}
+    #zoomBar .sep{display:none}
+    .toolrow{gap:8px}
+    #pageNav{width:100%}
+    #pageNav .btn{flex:1}
+    #pgInfo{white-space:nowrap}
+    .chk{font-size:15px;color:var(--ink)}
+    textarea,pre#textOut{min-height:190px;font-size:15px}
+    .colhead{flex-wrap:wrap;gap:6px}
+  }
   .notice{max-width:1100px;margin:0 auto 14px;padding:10px 14px;font-size:13px;line-height:1.7;
     color:var(--sub);background:#eef4ff;border:1px solid #d3e0f8;border-radius:10px}
+  @media(max-width:768px){.notice{margin:0 8px 12px;padding:9px 11px;font-size:12px;line-height:1.6}}
 </style>
 </head>
 <body>
@@ -95,7 +151,7 @@
     <div id="progressText">準備中…</div>
   </div>
 
-  <div class="controls" id="imgControls" style="display:none">
+  <div class="controls hide" id="imgControls">
     <div class="ctl"><label>原調 (Key)</label><select id="imgFrom"></select></div>
     <div class="ctl"><label>新調 (Key)</label><select id="imgTo"></select></div>
     <div class="ctl"><label>升降半音</label>
@@ -109,8 +165,8 @@
     <div class="ctl"><label>標註方式</label>
       <select id="imgMode"><option value="cover">覆蓋原和弦</option><option value="above">標在原和弦上方</option></select>
     </div>
-    <div class="ctl"><label>新和弦顏色</label><input type="color" id="imgColor" value="#d3273e"></div>
-    <div class="ctl"><label>標註字級（<span id="fontVal">100%</span>）</label><input type="range" id="imgFont" min="50" max="300" value="100" step="5" style="width:120px"></div>
+    <div class="ctl wide"><label>新和弦顏色</label><input type="color" id="imgColor" value="#d3273e"></div>
+    <div class="ctl wide"><label>標註字級（<span id="fontVal">100%</span>）</label><input type="range" id="imgFont" min="50" max="300" value="100" step="5" style="width:120px"></div>
     <button class="btn primary" id="btnDownload">下載本頁 PNG ⬇</button>
     <button class="btn primary" id="btnPdfAll">下載全部 PDF ⬇</button>
   </div>
@@ -126,14 +182,32 @@
     <button class="btn" id="zoomFitP" title="整頁塞進視窗">符合整頁</button>
     <button class="btn" id="zoom100" title="原始像素大小">100%</button>
   </div>
-  <div id="canvasWrap"><canvas id="imgCanvas"></canvas></div>
-  <div class="toolrow" id="imgTools" style="display:none">
-    <span id="pageNav" style="display:none">
+  <div id="canvasArea">
+    <div id="canvasWrap"><canvas id="imgCanvas"></canvas></div>
+    <div id="floatBar">
+      <button class="btn fb" id="fbMode" title="切換瀏覽／編輯">✋</button>
+      <button class="btn fb" id="fbOut" title="縮小">−</button>
+      <button class="btn fb" id="fbIn" title="放大">＋</button>
+      <button class="btn fb" id="fbFit" title="符合寬度">⇔</button>
+    </div>
+  </div>
+  <div id="modeTip" class="hide"></div>
+  <div class="toolrow hide" id="imgTools">
+    <span id="pageNav">
       <button class="btn" id="pgPrev">◀ 上一頁</button>
-      <b id="pgInfo" style="margin:0 8px"></b>
+      <b id="pgInfo"></b>
       <button class="btn" id="pgNext">下一頁 ▶</button>
     </span>
-    <label class="chk"><input type="checkbox" id="showBoxes" checked> 顯示辨識框（點藍框＝排除誤判；點<b>綠框</b>＝刪除；<b>拖曳綠框＝移動、拖右下角手把＝調覆蓋範圍</b>；點空白處＝手動補和弦。字級由上方「標註字級」滑桿全頁統一調整；顯示大小用上方「顯示縮放」或 Ctrl＋滾輪）</label>
+    <label class="chk"><input type="checkbox" id="showBoxes" checked> 顯示辨識框</label>
+    <details class="help">
+      <summary>標註操作說明</summary>
+      <div class="body">
+        <b>編輯譜面標註</b>：點<b>藍框</b>＝排除誤判；點<b>綠框</b>＝刪除；拖曳綠框＝移動、拖右下角手把＝調覆蓋範圍；點空白處＝手動補和弦。<br>
+        <b>字級</b>由上方「標註字級」滑桿全頁統一調整。<br>
+        <b>顯示大小</b>：電腦用上方「顯示縮放」或 Ctrl＋滾輪；手機用雙指捏合、雙擊切換原尺寸／符合寬度。<br>
+        <b>手機</b>請用譜面右下角的 <b>✋／✏️</b> 切換：✋ 瀏覽（單指拖曳移動譜面），✏️ 編輯（點選與拖曳標註）。
+      </div>
+    </details>
   </div>
 </div>
 
@@ -588,11 +662,15 @@ async function runOCR(){
     }
     await worker.terminate();
     wrap.style.display='none';
-    document.getElementById('imgControls').style.display='flex';
-    document.getElementById('imgTools').style.display='flex';
+    document.getElementById('imgControls').classList.remove('hide');
+    document.getElementById('imgTools').classList.remove('hide');
     canvasWrap.style.display='block';
     document.getElementById('zoomBar').style.display='flex';
-    document.getElementById('pageNav').style.display=pages.length>1?'inline':'none';
+    document.getElementById('pageNav').style.display=pages.length>1?'flex':'none';
+    if(IS_TOUCH){
+      document.getElementById('floatBar').classList.add('on');
+      document.getElementById('modeTip').classList.remove('hide');
+    }
     const info=document.getElementById('detInfo');
     info.style.display='block';
     renderImage();
@@ -856,8 +934,9 @@ let viewZoom=1, zoomMode='fitW';   // fitW=符合寬度 / fitP=符合整頁 / fr
 function wrapBox(){
   const cs=getComputedStyle(canvasWrap);
   const w=canvasWrap.clientWidth-parseFloat(cs.paddingLeft||0)-parseFloat(cs.paddingRight||0)-2;
-  // max-height 是 75vh，但也可能被實際高度限制；用 min 取得可視高度
-  const h=Math.min(parseFloat(cs.maxHeight)||window.innerHeight*0.75,window.innerHeight*0.75)-2;
+  // 可視高度由 CSS max-height 決定（桌機 75vh、手機 60svh），再以視窗高度為上限保險
+  const mh=parseFloat(cs.maxHeight);
+  const h=(isFinite(mh)&&mh>0?Math.min(mh,window.innerHeight):window.innerHeight*0.75)-2;
   return {w:Math.max(50,w),h:Math.max(50,h)};
 }
 function fitZoom(mode){
@@ -919,36 +998,107 @@ function canvasPos(e){
           y:(e.clientY-r.top)*(canvas.height/r.height)};
 }
 // 由後往前找（後加的綠框優先）；綠框先判右下角手把，再判框身
-function hitTest(p,x,y){
-  // 容差換算成「螢幕上約 10px / 5px」，縮小顯示時才不會難點到
-  const hr=Math.max(handleR(p.img)*1.6,8,10/viewZoom), tol=Math.max(4,5/viewZoom);
+// touch=true 時容差放大（手指的接觸面比滑鼠游標大得多）
+function hitTest(p,x,y,touch){
+  // 容差換算成「螢幕上約 10px / 5px」（觸控 24px / 14px），縮小顯示時才不會難點到
+  const hpx=touch?24:10, tpx=touch?14:5;
+  const hrMax=Math.max(handleR(p.img)*1.6,8,hpx/viewZoom), tolMax=Math.max(4,tpx/viewZoom);
   for(let i=p.dets.length-1;i>=0;i--){
     const d=p.dets[i],b=d.bbox;
+    // 容差不得吃掉整個框：顯示縮很小時 24/viewZoom 會比框本身還大，
+    // 手把判定就會蓋住整個框身，變成怎麼點都是 resize（永遠刪不掉、拖不動）。
+    const m=Math.max(4,Math.min(b.x1-b.x0,b.y1-b.y0));
+    const hr=Math.min(hrMax,m*0.6), tol=Math.min(tolMax,m);
     if(d.manual&&Math.abs(x-(b.x1+3))<=hr&&Math.abs(y-(b.y1+3))<=hr)return{i,d,mode:'resize'};
     if(x>=b.x0-tol&&x<=b.x1+tol&&y>=b.y0-tol&&y<=b.y1+tol)return{i,d,mode:d.manual?'move':'toggle'};
   }
   return null;
 }
-let dragSt=null; // {hit,x0,y0,orig,moved}
+// ---------- 觸控手勢：瀏覽/編輯模式、單指平移、雙指捏合縮放、雙擊縮放 ----------
+// canvas 有 touch-action:none（拖曳標註需要），所以平移與縮放都得自己實作。
+const IS_TOUCH=matchMedia('(any-pointer:coarse)').matches;
+let editMode=!IS_TOUCH;   // 觸控裝置預設「瀏覽」；純滑鼠裝置行為與過去完全相同
+if(IS_TOUCH)document.body.classList.add('touch');
+function setEditMode(on){
+  editMode=on;
+  const b=document.getElementById('fbMode');
+  b.textContent=on?'✏️':'✋';
+  b.classList.toggle('act',on);
+  b.title=on?'目前：編輯標註（點一下切回瀏覽）':'目前：瀏覽譜面（點一下切到編輯）';
+  canvasWrap.classList.toggle('viewmode',!on);
+  document.getElementById('modeTip').innerHTML=on
+    ?'✏️ <b>編輯模式</b>：點譜面可排除／刪除／新增和弦標註，拖曳綠框可移動。雙指仍可捏合縮放。'
+    :'✋ <b>瀏覽模式</b>：單指拖曳移動譜面、雙指捏合縮放、雙擊切換原尺寸／符合寬度。要修改標註請按右下角 ✋ 切到編輯。';
+}
+const ptrs=new Map();      // pointerId → 目前的 client 座標（用來算雙指中點與距離）
+let gest=null;             // {type:'pan'|'pinch', …}
+let lastTap=0,lastTapXY=null;
+function pinchInfo(){
+  const a=[...ptrs.values()];
+  return {x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+}
+// 捲動譜面容器；容器已到邊界時，剩下的量交給頁面捲動（否則手指會「卡住」）
+function panBy(dx,dy){
+  const sy=canvasWrap.scrollTop;
+  canvasWrap.scrollLeft+=dx;
+  canvasWrap.scrollTop=sy+dy;
+  const rest=dy-(canvasWrap.scrollTop-sy);
+  if(rest)window.scrollBy(0,rest);
+}
+let dragSt=null; // {hit,x0,y0,orig,moved,touch}
+function abortDrag(){ // 第二指落下時放棄標註拖曳，並還原已經被拖動的框
+  if(dragSt&&dragSt.moved&&dragSt.hit&&dragSt.orig){
+    Object.assign(dragSt.hit.d.bbox,dragSt.orig);renderImage();
+  }
+  dragSt=null;
+}
 canvas.onpointerdown=e=>{
-  const p=curPage();if(!p||e.button!==0)return;
-  const {x,y}=canvasPos(e);
-  const hit=hitTest(p,x,y);
-  dragSt={hit,x0:x,y0:y,orig:hit?{...hit.d.bbox}:null,moved:false};
+  const p=curPage();if(!p)return;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   try{canvas.setPointerCapture(e.pointerId);}catch(err){}
+  if(ptrs.size===2){                       // 第二指落下 → 捏合縮放（兩種模式都適用）
+    abortDrag();
+    const m=pinchInfo();
+    gest={type:'pinch',d0:m.d,mx:m.x,my:m.y};
+    return;
+  }
+  if(ptrs.size>2)return;
+  const touch=e.pointerType!=='mouse';
+  if(touch&&!editMode){gest={type:'pan',x:e.clientX,y:e.clientY,moved:0};return;}
+  if(e.button!==0)return;
+  const {x,y}=canvasPos(e);
+  const hit=hitTest(p,x,y,touch);
+  dragSt={hit,x0:x,y0:y,orig:hit?{...hit.d.bbox}:null,moved:false,touch};
 };
 canvas.onpointermove=e=>{
   const p=curPage();if(!p)return;
+  if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(gest&&gest.type==='pinch'){
+    if(ptrs.size<2)return;
+    const m=pinchInfo(),r=canvasWrap.getBoundingClientRect();
+    if(gest.d0>0&&m.d>0)setZoom(viewZoom*(m.d/gest.d0),{x:m.x-r.left,y:m.y-r.top});
+    gest.d0=m.d;
+    panBy(gest.mx-m.x,gest.my-m.y);   // 兩指一起移動＝同時平移
+    gest.mx=m.x;gest.my=m.y;
+    return;
+  }
+  if(gest&&gest.type==='pan'){
+    const dx=e.clientX-gest.x,dy=e.clientY-gest.y;
+    gest.x=e.clientX;gest.y=e.clientY;gest.moved+=Math.abs(dx)+Math.abs(dy);
+    panBy(-dx,-dy);
+    return;
+  }
   const {x,y}=canvasPos(e);
-  if(!dragSt){ // 未按下：只更新游標
-    const hit=hitTest(p,x,y);
+  if(!dragSt){ // 未按下：只更新游標（觸控沒有游標，略過）
+    if(e.pointerType!=='mouse')return;
+    const hit=hitTest(p,x,y,false);
     canvas.style.cursor=hit?(hit.mode==='resize'?'nwse-resize':hit.mode==='move'?'move':'pointer'):'crosshair';
     return;
   }
   const {hit,orig}=dragSt;
   if(!hit||!hit.d.manual)return; // 只有綠框能拖
   const dx=x-dragSt.x0,dy=y-dragSt.y0;
-  const th=3/viewZoom; // 螢幕上位移 3px 內仍視為點擊（隨顯示縮放換算）
+  const th=(dragSt.touch?8:3)/viewZoom; // 螢幕上位移 3px（觸控 8px）內仍視為點擊
   if(!dragSt.moved&&Math.abs(dx)<=th&&Math.abs(dy)<=th)return;
   dragSt.moved=true;
   const b=hit.d.bbox;
@@ -961,7 +1111,26 @@ canvas.onpointermove=e=>{
   }
   renderImage();
 };
+// 瀏覽模式的輕點：連續兩下＝在「原尺寸」與「符合寬度」之間切換
+function viewTap(e){
+  const now=Date.now(),r=canvasWrap.getBoundingClientRect();
+  if(now-lastTap<320&&lastTapXY&&Math.abs(e.clientX-lastTapXY.x)<40&&Math.abs(e.clientY-lastTapXY.y)<40){
+    lastTap=0;lastTapXY=null;
+    if(viewZoom<0.999)setZoom(1,{x:e.clientX-r.left,y:e.clientY-r.top});
+    else setZoomMode('fitW');
+    return;
+  }
+  lastTap=now;lastTapXY={x:e.clientX,y:e.clientY};
+}
 canvas.onpointerup=e=>{
+  ptrs.delete(e.pointerId);
+  try{canvas.releasePointerCapture(e.pointerId);}catch(err){}
+  if(gest&&gest.type==='pinch'){if(ptrs.size<2)gest=null;return;}
+  if(gest&&gest.type==='pan'){
+    const moved=gest.moved;gest=null;
+    if(moved<10)viewTap(e);   // 幾乎沒移動 → 當成輕點
+    return;
+  }
   const p=curPage();if(!p||!dragSt)return;
   const {hit,moved}=dragSt;dragSt=null;
   if(moved)return; // 拖曳結束，不觸發點擊行為
@@ -983,7 +1152,18 @@ canvas.onpointerup=e=>{
     bbox:{x0:x-wd/2,y0:y-h/2,x1:x+wd/2,y1:y+h/2},on:true});
   renderImage();
 };
-canvas.onpointercancel=()=>{dragSt=null;};
+canvas.onpointercancel=e=>{
+  ptrs.delete(e.pointerId);
+  if(gest&&(gest.type==='pan'||ptrs.size<2))gest=null;
+  dragSt=null;
+};
+
+// 浮動工具列（僅觸控裝置顯示）
+document.getElementById('fbMode').onclick=()=>setEditMode(!editMode);
+document.getElementById('fbOut').onclick=()=>zoomStep(-1);
+document.getElementById('fbIn').onclick=()=>zoomStep(1);
+document.getElementById('fbFit').onclick=()=>setZoomMode('fitW');
+setEditMode(editMode);
 
 document.getElementById('btnDownload').onclick=()=>{
   const p=curPage();if(!p)return;

@@ -66,6 +66,7 @@ REPLACEMENTS = [
 
 NOTICE_CSS = """  .notice{max-width:1100px;margin:0 auto 14px;padding:10px 14px;font-size:13px;line-height:1.7;
     color:var(--sub);background:#eef4ff;border:1px solid #d3e0f8;border-radius:10px}
+  @media(max-width:768px){.notice{margin:0 8px 12px;padding:9px 11px;font-size:12px;line-height:1.6}}
 </style>"""
 
 

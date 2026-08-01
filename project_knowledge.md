@@ -1,5 +1,21 @@
 # 專案知識庫
 
+## 2026-08-01 — 手機版：響應式版面 ＋ 觸控手勢（瀏覽/編輯模式）
+- **最大的坑：`#imgCanvas{touch-action:none}` 讓手機完全不能操作**。這行是 2026-07-31 為了讓「拖曳綠框」不被瀏覽器捲動吃掉才加的，代價是**手指在譜面上做任何事都不會捲動也不會縮放** —— 桌機看不出問題（有滾輪、有 Ctrl＋滾輪），手機上譜面等於被釘死。而且縮放入口只綁 `Ctrl/⌘＋滾輪`，觸控裝置根本沒有對應手勢。
+- 解法不是拿掉 `touch-action:none`（那樣就換成拖曳標註失效），而是**兩者都自己實作**：
+  - `IS_TOUCH = matchMedia('(any-pointer:coarse)').matches` → 觸控裝置預設 `editMode=false`（瀏覽），純滑鼠裝置 `editMode=true`，**桌機行為與過去完全相同**。
+  - 模式判斷用 `e.pointerType!=='mouse'`，所以觸控筆電上插滑鼠仍然直接編輯，不必切模式。
+  - 譜面右下角浮動工具列 `#floatBar`（✋/✏️＋−/＋/⇔），只在 `IS_TOUCH` 且載入完成後顯示。放在新的 `#canvasArea{position:relative}` 裡而**不是** `#canvasWrap` 裡 —— 後者是 `overflow:auto`，絕對定位的子元素會跟著內容捲走。
+- 手勢實作（全部走 pointer events，`ptrs` Map 記錄每根手指的 client 座標）：
+  - 1 指 ＋ 瀏覽模式 → `pan`：**增量式**（每次 move 只算與上次的差），因為要把捲不動的餘量轉給 `window.scrollBy` —— 譜面捲到底時手指若「卡住」體感很差。絕對式（記起點）做不到這件事。
+  - 2 指（**任何模式**）→ `pinch`：`setZoom(viewZoom*(d/d0), 兩指中點)` 後把 `d0` 更新為 `d`（增量），再用中點位移 `panBy` 一起平移。第二指落下時呼叫 `abortDrag()`，把已被拖動的框 `Object.assign` 還原 —— 否則「想縮放卻先碰到一個綠框」會把框移走。
+  - 雙擊（瀏覽模式、位移 <10px、間隔 <320ms、距離 <40px）→ `viewZoom<1` 就回 100%，否則回符合寬度。
+- **`hitTest` 的容差不能只放大、必須設上限**（jsdom 測試抓到的真實 bug）：觸控容差原本寫 `24/viewZoom`，在「符合寬度」約 23% 時等於 **105 個原圖像素**，比整個和弦框（約 53×36）還大 → 右下角手把的判定範圍蓋住整個框身，**每一下都被判成 resize，框變成刪不掉也拖不動**。修法是把上限拉進迴圈內、依框自身尺寸夾住：`m=min(框寬,框高)`、`hr=min(hrMax, m*0.6)`、`tol=min(tolMax, m)`。桌機 viewZoom=1 時算出來與舊值完全相同（hr=16、tol=5），無回歸。
+- 版面：`@media(max-width:768px)` 把 `.controls` 由 flex-wrap 改 **2 欄 grid**（顏色/字級兩格標 `.ctl.wide` 跨滿）、按鈕 `min-height:44px`、`select/textarea/input` 強制 **16px**（**iOS 對 <16px 的表單控制項聚焦時會自動放大整頁**，這是 iOS 特有行為，不是字太小的問題）、邊距 22px→8px、`#canvasWrap` 改 `60svh`（`svh` 避開 Safari 動態網址列造成的 vh 跳動，前面留 `60vh` 當舊瀏覽器 fallback）。
+- **切版面時 inline `style="display:none"` 會擋住 media query**：`#imgControls` 桌機是 flex、手機要 grid，但 JS 原本寫 `style.display='flex'`，inline 樣式贏過 media query。改成 `.hide{display:none!important}` class 開關（`imgControls`/`imgTools`/`modeTip`）。`#pageNav` 的 `'inline'` 也改成 `'flex'` 才吃得到 `gap`。
+- 那段又臭又長的「顯示辨識框（點藍框＝…）」label 在手機上是一整片文字牆，拆成短 label ＋ `<details class="help">` 收合說明。
+- 驗證：`node --check` ＋ **jsdom 51 項斷言**（`outputs/test_mobile.js`）—— 用 `bootAndRun()` 先 stub `matchMedia`/`innerWidth`/`getContext`/`getBoundingClientRect`/`scrollTop` 再注入 `<script>`（**JSDOM 建構時就會跑 script，來不及事後 stub**），然後直接呼叫 `canvas.onpointerdown/move/up` 餵假 pointer 物件。`let` 宣告的 `viewZoom`/`editMode`/`gest` 不是 `window` 的屬性，要用 `w.eval('viewZoom')` 才讀得到。同一份測試對 `和弦轉調工具.html` 與產出的 `docs/index.html` 各跑一次。
+
 ## 2026-07-31 — 上線 GitHub Pages：自帶第三方函式庫
 - 架構：**單一原始碼** `和弦轉調工具.html`（本機用，走 CDN）→ `build_site.py` → `docs/index.html`（部署用，走 `docs/vendor/`）。build script 對每個替換都要求「正好命中 1 次」，沒命中就 `sys.exit`，避免升級版本後靜靜產出壞頁面；最後還會掃描產出檔，確認沒有殘留任何 `http(s)://` 外部資源。
 - **最大的坑：worker 的相對路徑**。tesseract.js 預設用 **blob URL** 建立 Web Worker，worker 裡的 `importScripts('vendor/…')` 會相對於**網站根目錄**解析，在 GitHub Pages 專案頁 `https://user.github.io/repo/` 底下必 404。解法：頁面一開始算好同源絕對路徑 `const VENDOR=new URL('vendor/',location.href).href`，再把 `workerPath/corePath/langPath` 與 `pdfjsLib.GlobalWorkerOptions.workerSrc` 都指到它。已用 jsdom 驗證專案頁（子路徑）與使用者頁（根路徑）都正確。
