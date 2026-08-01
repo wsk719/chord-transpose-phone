@@ -1,6 +1,8 @@
 # 和弦轉調工具
 
-**線上使用：https://wsk719.github.io/chord-transpose-tool/**
+**線上使用：https://wsk719.github.io/chord-transpose-phone/**（支援手機觸控操作，本專案維護的版本）
+
+> 舊版仍留在 https://wsk719.github.io/chord-transpose-tool/ ，沒有手機版面與觸控手勢，不再更新。
 
 上傳圖片／PDF 和弦譜 → OCR 辨識和弦 → 轉調並直接標註回譜面；也支援純文字譜轉調。
 **全部在瀏覽器端執行，沒有後端，譜面檔案不會離開使用者的電腦。**
@@ -39,7 +41,15 @@ node tests/test_mobile.js docs/index.html  # 測產出的部署版
 
 ## 部署到 GitHub Pages
 
-本專案已部署於 [wsk719/chord-transpose-tool](https://github.com/wsk719/chord-transpose-tool)（`main` 分支 `/docs`）。
+本專案已部署於 [wsk719/chord-transpose-phone](https://github.com/wsk719/chord-transpose-phone)（`main` 分支 `/docs`），
+本機 git remote 名稱為 `phone`；舊的 `origin`（chord-transpose-tool）保留但不再推送。
+
+```bash
+python build_site.py          # 改完 和弦轉調工具.html 後一定要跑
+git add -A && git commit -m "…"
+git push phone main           # ← 部署
+```
+
 要重新部署到別的 repo，步驟如下：
 
 1. 把這個資料夾推到 GitHub 的**公開** repo（免費方案的 Pages 只支援公開 repo）。
